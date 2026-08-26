@@ -1,16 +1,15 @@
 // ==UserScript==
 // @name          Inventory Price Scanner
-// @version      0.2.0
-// @description  Ctrl+K for menu
-//  inventory pricer, scans each page (chars, wpns, chests,) Prices from luke skywalk (avg/BROS/yzzz).
+// @version      0.3.4
+// @description  Ctrl+K. Scan Inventory, or search Skin Catalog.
 // @author       napkin
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const VERSION = '0.2.0';
-  const MENU_HOTKEY = 'k'; // Ctrl+K (Ctrl+Shift+K also works)
+  const VERSION = '0.3.4';
+  const MENU_HOTKEY = 'k';
 
   const PRICE_API_URL = 'https://kirka.lukeskywalk.com/finalUpdatedBaseList.json';
   const SKINS_JSON_URL =
@@ -23,7 +22,6 @@
   const SKINS_REPO_URL = 'https://github.com/nnapkin12/napkin-theme-assets';
   const SKINS_CACHE_KEY = 'nap-invscan-skins-v2';
 
-  const SCAN_POLL_MS = 200; // unused — scans are button-only
   const TAB_SWITCH_MS = 550;
   const PRICE_CACHE_MS = 10 * 60 * 1000;
   const CATALOG_SEARCH_MS = 120;
@@ -32,6 +30,8 @@
     'VITA', 'Shark', 'LAR', 'AR-9', 'SCAR', 'Weatie', 'M60', 'Revolver',
     'Bayonet', 'Tomahawk', 'MAC-10',
   ];
+  const WEAPON_TYPE_SET = {};
+  for (let i = 0; i < WEAPONS.length; i++) WEAPON_TYPE_SET[WEAPONS[i]] = true;
 
   const RARITY_LABEL = {
     U: 'Uncommon',
@@ -54,12 +54,12 @@
   };
 
   const RARITY_FROM_CODE = {
-    0: 'C', // Common
-    1: 'R', // Rare
-    2: 'E', // Epic
-    3: 'L', // Legendary
-    4: 'M', // Mythical
-    5: 'P', // Paranormal
+    0: 'C',
+    1: 'R',
+    2: 'E',
+    3: 'L',
+    4: 'M',
+    5: 'P',
   };
 
   const PRICELIST_OPTIONS = [
@@ -90,7 +90,6 @@
   let skinIndex = null;
   let skinIndexLoading = null;
 
-  /** @type {Map<string, object>} */
   let scannedItems = new Map();
   let totals = { weapons: 0, characters: 0, chests: 0, grand: 0 };
 
@@ -102,13 +101,11 @@
   let searchQuery = '';
   let listFingerprint = '';
 
-  /** @type {'inventory' | 'catalog'} */
   let mainTab = 'inventory';
   let catalogSearch = '';
-  /** @type {'all' | 'characters' | 'weapons' | 'other'} */
   let catalogScope = 'all';
   let catalogSearchTimer = 0;
-  let catalogRenderedAt = 0;
+  let catalogPopupRow = null;
 
   let ui = {};
 
@@ -136,6 +133,101 @@
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  function pricelistLabel(value) {
+    for (let i = 0; i < PRICELIST_OPTIONS.length; i++) {
+      if (PRICELIST_OPTIONS[i].value === value) return PRICELIST_OPTIONS[i].label;
+    }
+    return value;
+  }
+
+  function closeThemedSelects() {
+    const open = document.querySelectorAll('#ips-menu-root .ips-select.ips-open');
+    for (let i = 0; i < open.length; i++) open[i].classList.remove('ips-open');
+    const menus = document.querySelectorAll('#ips-menu-root .ips-select-menu');
+    for (let i = 0; i < menus.length; i++) menus[i].style.display = 'none';
+  }
+
+  function createThemedSelect(initialValue, onChange) {
+    const wrap = document.createElement('div');
+    wrap.className = 'ips-select';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ips-select-btn';
+    const menu = document.createElement('div');
+    menu.className = 'ips-select-menu';
+    let value = initialValue;
+
+    function paint() {
+      btn.textContent = pricelistLabel(value);
+      const opts = menu.children;
+      for (let i = 0; i < opts.length; i++) {
+        opts[i].classList.toggle('ips-select-opt-active', opts[i].dataset.value === value);
+      }
+    }
+
+    function setValue(next, fire) {
+      value = next;
+      paint();
+      if (fire) onChange(next);
+    }
+
+    function placeMenu() {
+      const r = btn.getBoundingClientRect();
+      menu.style.display = 'block';
+      menu.style.position = 'fixed';
+      menu.style.top = r.bottom + 4 + 'px';
+      menu.style.left = r.left + 'px';
+      menu.style.minWidth = Math.max(r.width, 168) + 'px';
+      menu.style.zIndex = '2147483647';
+      if (menuRoot && menu.parentNode !== menuRoot) menuRoot.appendChild(menu);
+    }
+
+    PRICELIST_OPTIONS.forEach((opt) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'ips-select-opt';
+      item.dataset.value = opt.value;
+      item.textContent = opt.label;
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setValue(opt.value, true);
+        closeThemedSelects();
+      });
+      menu.appendChild(item);
+    });
+
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (btn.disabled) return;
+      const willOpen = !wrap.classList.contains('ips-open');
+      closeThemedSelects();
+      if (willOpen) {
+        wrap.classList.add('ips-open');
+        placeMenu();
+      }
+    });
+
+    wrap.appendChild(btn);
+    paint();
+
+    return {
+      el: wrap,
+      get value() {
+        return value;
+      },
+      set value(next) {
+        setValue(next, false);
+      },
+      set disabled(flag) {
+        btn.disabled = !!flag;
+        wrap.classList.toggle('ips-disabled', !!flag);
+        if (flag) closeThemedSelects();
+      },
+    };
+  }
+
   function safeFileName(parts) {
     return parts
       .filter(Boolean)
@@ -145,9 +237,22 @@
       .slice(0, 120);
   }
 
+  function isGunOrKnife(row) {
+    if (!row) return false;
+    if (row.type === 'Weapon') return true;
+    return !!WEAPON_TYPE_SET[row.type];
+  }
+
+  function weaponHintFromRow(row) {
+    if (!row) return '';
+    if (row.weapon) return row.weapon;
+    if (isGunOrKnife(row)) return row.type;
+    return '';
+  }
+
   function resolveTextureDownloadUrl(row) {
-    if (!row || row.type !== 'Weapon') return null;
-    const catalog = resolveCatalogSkin(row.name, row.weapon);
+    if (!isGunOrKnife(row)) return null;
+    const catalog = row.catalogSkin || resolveCatalogSkin(row.name, weaponHintFromRow(row));
     if (catalog && catalog.shortKey) {
       return {
         url: 'https://kirka.io/assets/img/texture.' + catalog.shortKey + '.webp',
@@ -162,7 +267,7 @@
   }
 
   function canSaveTexture(row) {
-    return !!(row && row.type === 'Weapon' && resolveTextureDownloadUrl(row));
+    return !!resolveTextureDownloadUrl(row);
   }
 
   async function saveTextureWebp(row, buttonEl) {
@@ -182,7 +287,7 @@
       const blob = await resp.blob();
       const fileName =
         safeFileName([
-          row.weapon || 'weapon',
+          weaponHintFromRow(row) || 'weapon',
           row.name,
           info.kind === 'texture' ? 'texture' : 'render',
         ]) + '.webp';
@@ -273,54 +378,38 @@
     return priceList;
   }
 
-  /** Characters / weapons / chests+cards — Skywalk list has characters; skins.json does not. */
   function catalogBucket(type) {
     if (type === 'Character') return 'characters';
-    if (type === 'Chest' || type === 'Card') return 'other';
+    if (type === 'Chest' || type === 'Card' || !type || type === 'Unknown') return 'other';
     return 'weapons';
   }
 
-  function rarityBorderColor(code) {
-    switch (code) {
-      case 'C':
-        return '#7fffd4';
-      case 'R':
-        return '#00ffff';
-      case 'E':
-        return '#8a2be2';
-      case 'L':
-        return '#ffa500';
-      case 'P':
-        return '#c0c0c0';
-      case 'M':
-        return '#b22222';
-      case 'U':
-        return '#b0b8c4';
-      default:
-        return 'rgba(255,170,70,0.45)';
-    }
+  function isJunkCatalogName(name) {
+    const n = String(name || '').trim();
+    if (!n) return true;
+    if (/[\*\u2735\u2605\u2606\u2726\u2727\u2730\u2734-\u2739\u272a-\u272f]/.test(n)) return true;
+    if (/^custom(?:\s|\d|$)/i.test(n)) return true;
+    return false;
   }
 
-  /** Same CDN pattern as kirka.lukeskywalk.com/items.html — images stay in browser HTTP cache, not localStorage. */
   function skywalkRenderUrls(itemName, type) {
     const t = String(type || '');
     const name = String(itemName || '');
     const isChar = t === 'Character' || t === 'Characters';
     const isCard = t === 'Card';
-    const ext = isChar || isCard ? '.png' : '.webp';
-    const primary =
-      SKYWALK_RENDER_CDN + encodeURIComponent(t) + '/' + encodeURIComponent(name) + '-render' + ext;
-    let fallbackName = name;
-    if (isChar) fallbackName = 'James';
-    else if (!isCard) fallbackName = t;
-    const fallbackExt = isChar || t === 'Characters' || isCard ? '.png' : '.webp';
+    const folder = SKYWALK_RENDER_CDN + encodeURIComponent(t) + '/';
+    const file = encodeURIComponent(name) + '-render';
+    if (isChar) {
+      return {
+        primary: folder + file + '.webp',
+        fallback: folder + file + '.png',
+      };
+    }
+    const ext = isCard ? '.png' : '.webp';
+    const primary = folder + file + ext;
+    const fallbackName = isCard ? name : t;
     const fallback =
-      SKYWALK_RENDER_CDN +
-      encodeURIComponent(t) +
-      '/' +
-      encodeURIComponent(fallbackName) +
-      '-render' +
-      fallbackExt;
+      folder + encodeURIComponent(fallbackName) + '-render' + ext;
     return { primary, fallback };
   }
 
@@ -333,6 +422,7 @@
       const e = priceList[i];
       const name = e.itemName || '';
       const type = e.type || '';
+      if (isJunkCatalogName(name)) continue;
       if (q) {
         const hay = (
           name +
@@ -346,6 +436,7 @@
       const bucket = catalogBucket(type);
       if (catalogScope !== 'all' && catalogScope !== bucket) continue;
       const urls = skywalkRenderUrls(name, type);
+      const catalogSkin = resolveCatalogSkin(name, type);
       out[bucket].push({
         name,
         type,
@@ -354,6 +445,9 @@
         price: getPriceFromEntry(e, settings),
         renderUrl: urls.primary,
         renderFallback: urls.fallback,
+        skywalk: e,
+        catalogSkin,
+        weapon: catalogSkin ? catalogSkin.weapon : type,
       });
     }
 
@@ -368,10 +462,18 @@
     return out;
   }
 
+  function bindRenderFallback(img, fallbackUrl) {
+    img.addEventListener('error', () => {
+      if (img.dataset.fb) return;
+      img.dataset.fb = '1';
+      if (fallbackUrl) img.src = fallbackUrl;
+    });
+  }
+
   function createCatalogCard(row) {
-    const card = document.createElement('div');
+    const card = document.createElement('button');
+    card.type = 'button';
     card.className = 'ips-cat-card';
-    card.style.borderColor = rarityBorderColor(row.rarity);
     card.title = row.name + ' · ' + row.type + ' · ' + row.rarityLabel;
 
     const img = document.createElement('img');
@@ -381,11 +483,7 @@
     img.alt = row.name;
     img.draggable = false;
     img.src = row.renderUrl;
-    img.addEventListener('error', () => {
-      if (img.dataset.fb) return;
-      img.dataset.fb = '1';
-      img.src = row.renderFallback;
-    });
+    bindRenderFallback(img, row.renderFallback);
     card.appendChild(img);
 
     const nameEl = document.createElement('div');
@@ -403,6 +501,12 @@
     meta.appendChild(typeEl);
     meta.appendChild(priceEl);
     card.appendChild(meta);
+
+    card.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openCatalogPopup(row);
+    });
     return card;
   }
 
@@ -454,7 +558,7 @@
     }
 
     if (ui.catalogCount) ui.catalogCount.textContent = total + ' shown';
-    catalogRenderedAt = Date.now();
+    if (catalogPopupRow) renderCatalogPopup(catalogPopupRow);
   }
 
   function scheduleCatalogRender() {
@@ -468,26 +572,153 @@
   async function ensureCatalogLoaded(force) {
     setStatus('Loading Skywalk catalog…');
     await fetchPriceList(!!force);
+    await ensureSkinIndex();
     renderCatalogGrid();
+    const data = filteredCatalogEntries();
+    const shown = data.characters.length + data.weapons.length + data.other.length;
     setStatus(
       priceList.length
-        ? 'Catalog ready · ' +
-            priceList.length +
-            ' Skywalk entries (memory cache ~10 min, images via browser cache).'
+        ? 'Catalog ready · ' + shown + ' items.'
         : 'Catalog fetch failed — check network.'
     );
   }
 
+  function isCatalogPopupOpen() {
+    return !!(ui.catModal && ui.catModal.classList.contains('ips-open'));
+  }
+
+  function closeCatalogPopup() {
+    catalogPopupRow = null;
+    if (!ui.catModal) return;
+    ui.catModal.classList.remove('ips-open');
+    ui.catModal.setAttribute('aria-hidden', 'true');
+    if (ui.catModalBody) ui.catModalBody.innerHTML = '';
+  }
+
+  function openCatalogPopup(row) {
+    if (!ui.catModal || !row) return;
+    catalogPopupRow = row;
+    ui.catModal.classList.add('ips-open');
+    ui.catModal.setAttribute('aria-hidden', 'false');
+    renderCatalogPopup(row);
+  }
+
+  function appendKv(table, label, value, opt) {
+    if (value == null || value === '') return;
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    if (opt && opt.big) dd.classList.add('ips-kv-big');
+    table.appendChild(dt);
+    table.appendChild(dd);
+  }
+
+  function ownedCountForRow(row) {
+    if (row && row.count != null && row.key) return row.count;
+    let count = 0;
+    const name = normName(row && row.name);
+    const weapon = normName(weaponHintFromRow(row)).replace(/[^a-z0-9]/g, '');
+    scannedItems.forEach((item) => {
+      if (normName(item.name) !== name) return;
+      if (weapon) {
+        const itemWeapon = normName(item.weapon || '').replace(/[^a-z0-9]/g, '');
+        if (itemWeapon && itemWeapon !== weapon) return;
+      }
+      count += item.count || 0;
+    });
+    return count;
+  }
+
+  function fillItemMeta(table, row) {
+    const weaponType =
+      row.type === 'Weapon' ? row.weapon : isGunOrKnife(row) ? row.type : '';
+    if (weaponType) appendKv(table, 'Weapon type', weaponType);
+    else appendKv(table, 'Type', row.type || '—');
+
+    const priceEach = row.pricePerItem != null ? row.pricePerItem : row.price || 0;
+    const owned = ownedCountForRow(row);
+    appendKv(table, 'Price each', fmt(priceEach), { big: true });
+    appendKv(table, 'You own', owned + 'x (' + fmt(priceEach * owned) + ')', { big: true });
+
+    const e = row.skywalk;
+    if (!e) {
+      appendKv(table, 'Skywalk', 'No matching entry');
+      return;
+    }
+    if (e.inventory != null) appendKv(table, 'Units (global)', fmt(e.inventory), { big: true });
+    if (e.average != null) appendKv(table, 'Average', fmt(parsePrice(e.average)));
+    if (e.automatic != null) appendKv(table, 'Automatic', fmt(parsePrice(e.automatic)));
+    if (e.bros != null) appendKv(table, 'BROS', fmt(parsePrice(e.bros)));
+    if (e.bolt != null) appendKv(table, 'Bolt', fmt(parsePrice(e.bolt)));
+    if (e.fate != null) appendKv(table, 'Fate', fmt(parsePrice(e.fate)));
+    if (e.coefficient != null) appendKv(table, 'Coefficient', String(e.coefficient));
+    if (e.createdAt) {
+      const listed = new Date(e.createdAt);
+      appendKv(table, 'Listed since', isNaN(listed.getTime()) ? String(e.createdAt) : listed.toLocaleDateString());
+    }
+  }
+
+  function renderCatalogPopup(row) {
+    if (!ui.catModalBody) return;
+    row.price = getPriceFromEntry(row.skywalk, loadSettings());
+    ui.catModalBody.innerHTML = '';
+
+    const imgCol = document.createElement('div');
+    imgCol.className = 'ips-popup-img-col';
+
+    const img = document.createElement('img');
+    img.className = 'ips-popup-img';
+    img.alt = row.name;
+    img.draggable = false;
+    img.src = row.renderUrl;
+    bindRenderFallback(img, row.renderFallback);
+    imgCol.appendChild(img);
+
+    if (canSaveTexture(row)) {
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'ips-btn ips-save-tex';
+      saveBtn.textContent = 'Save texture webp';
+      saveBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        saveTextureWebp(row, saveBtn);
+      });
+      imgCol.appendChild(saveBtn);
+    }
+
+    const metaCol = document.createElement('div');
+    metaCol.className = 'ips-popup-meta';
+
+    const title = document.createElement('h3');
+    title.className = 'ips-detail-title';
+    title.textContent = row.name;
+    metaCol.appendChild(title);
+
+    const rarityPill = document.createElement('div');
+    rarityPill.className = 'ips-detail-rarity ' + rarityClass(row.rarity);
+    rarityPill.textContent = row.rarityLabel;
+    metaCol.appendChild(rarityPill);
+
+    const table = document.createElement('dl');
+    table.className = 'ips-kv';
+    fillItemMeta(table, row);
+
+    metaCol.appendChild(table);
+
+    ui.catModalBody.appendChild(imgCol);
+    ui.catModalBody.appendChild(metaCol);
+  }
+
   function setMainTab(tab) {
     mainTab = tab === 'catalog' ? 'catalog' : 'inventory';
+    closeThemedSelects();
+    if (mainTab !== 'catalog') closeCatalogPopup();
     if (ui.tabInv) ui.tabInv.classList.toggle('ips-tab-active', mainTab === 'inventory');
     if (ui.tabCat) ui.tabCat.classList.toggle('ips-tab-active', mainTab === 'catalog');
-    if (ui.invChrome) {
-      ui.invChrome.style.display = mainTab === 'inventory' ? 'flex' : 'none';
-    }
-    if (ui.catalogChrome) {
-      ui.catalogChrome.style.display = mainTab === 'catalog' ? 'flex' : 'none';
-    }
+    if (ui.invChrome) ui.invChrome.classList.toggle('ips-pane-active', mainTab === 'inventory');
+    if (ui.catalogChrome) ui.catalogChrome.classList.toggle('ips-pane-active', mainTab === 'catalog');
     if (mainTab === 'catalog') ensureCatalogLoaded(false);
     else refreshUi(true);
   }
@@ -556,11 +787,6 @@
     return shortKey.indexOf('.webp') !== -1 ? shortKey : `texture.${shortKey}.webp`;
   }
 
-  function hashToShortKey(textureKey) {
-    const m = String(textureKey || '').toLowerCase().match(/^texture\.([a-f0-9]+)\.webp$/i);
-    return m ? m[1] : '';
-  }
-
   function buildSkinIndex(payload) {
     const byNameWeapon = new Map();
     const byName = new Map();
@@ -585,7 +811,6 @@
       const skinName = String(row[1] || '');
       const weaponNorm = weaponRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
       const nameNorm = normName(skinName);
-      const renderUrl = renderForShort(shortKey);
       const rec = {
         shortKey,
         hash: shortKeyToHash(shortKey),
@@ -594,7 +819,7 @@
         weaponNorm,
         rarityCode: RARITY_FROM_CODE[row[2]] || 'M',
         rarity: RARITY_LABEL[RARITY_FROM_CODE[row[2]]] || 'Mythical',
-        renderUrl,
+        renderUrl: renderForShort(shortKey),
       };
       byNameWeapon.set(`${nameNorm}|${weaponNorm}`, rec);
       if (!byName.has(nameNorm)) byName.set(nameNorm, rec);
@@ -646,10 +871,6 @@
     return hit ? hit.renderUrl : domImgSrc || '';
   }
 
-  /**
-   * Prefer NAP skins.json rarity (Antique=Paranormal/5), then skywalk, then DOM color.
-   * DOM often mis-reads paranormal as Uncommon.
-   */
   function resolveRarityCode(name, weapon, domRarity) {
     const catalog = resolveCatalogSkin(name, weapon);
     if (catalog && catalog.rarityCode) return catalog.rarityCode;
@@ -674,7 +895,6 @@
     const rarSkinElem = subject.querySelector('.rar-skin');
     if (!rarSkinElem) return null;
     const bg = getComputedStyle(rarSkinElem).backgroundImage || '';
-    // Paranormal — black / near-black frames (DOM often fails → Uncommon)
     if (
       bg.includes('rgb(0, 0, 0)') ||
       bg.includes('rgb(0,0,0)') ||
@@ -736,10 +956,8 @@
         : resolveRarityCode(name, weapon, domRarity);
 
     const { entry, price } = lookupPrice(name, rarity, type, weapon, settings);
-
     const domImg = imgElem ? imgElem.src || imgElem.getAttribute('src') : '';
     const renderUrl = resolveRenderUrl(name, weapon, domImg);
-
     const key = itemKey(name, rarity, type, weapon);
     return {
       key,
@@ -819,7 +1037,6 @@
     setStatus('Clearing old scan & scanning all tabs…');
     disableScanButtons(true);
 
-    // Fresh full inventory — wipe everything first
     scannedItems.clear();
     recomputeTotals();
     persistScanned();
@@ -844,7 +1061,6 @@
       tabs[i].click();
       setStatus(`Scanning tab ${i + 1}/${tabs.length}…`);
       await sleep(TAB_SWITCH_MS);
-      // Wait a bit more so Kirka finishes rendering big inventories
       await sleep(350);
       scanVisibleInventory(settings, { replaceTab: true });
       refreshTotalsUi();
@@ -891,13 +1107,7 @@
     return Array.from(scannedItems.values())
       .filter((row) => {
         if (!q) return true;
-        const hay = [
-          row.name,
-          row.type,
-          row.weapon,
-          row.rarityLabel,
-          row.tab,
-        ]
+        const hay = [row.name, row.type, row.weapon, row.rarityLabel, row.tab]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -945,7 +1155,7 @@
     const row = key ? scannedItems.get(key) : null;
     if (!row) {
       ui.detail.innerHTML =
-        '<p class="ips-empty">Select an item from the list to view price data and render.</p>';
+        '<p class="ips-empty">Select a scanned item to view its price and render.</p>';
       return;
     }
 
@@ -967,13 +1177,11 @@
       imgCol.appendChild(missing);
     }
 
-    // Guns + knives only (NAP skins DB) — not characters/chests
     if (canSaveTexture(row)) {
       const saveBtn = document.createElement('button');
       saveBtn.type = 'button';
       saveBtn.className = 'ips-btn ips-save-tex';
       saveBtn.textContent = 'Save texture webp';
-      saveBtn.title = 'Download texture.webp from NAP skins DB / Kirka CDN';
       saveBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -999,39 +1207,7 @@
 
     const table = document.createElement('dl');
     table.className = 'ips-kv';
-    const add = (k, v, opt) => {
-      const dt = document.createElement('dt');
-      dt.textContent = k;
-      const dd = document.createElement('dd');
-      dd.textContent = v;
-      if (opt && opt.big) dd.classList.add('ips-kv-big');
-      table.appendChild(dt);
-      table.appendChild(dd);
-    };
-
-    // Weapons (guns + bayonet/tomahawk): Type === Weapon is redundant next to Weapon
-    if (row.type === 'Weapon') {
-      if (row.weapon) add('Weapon', row.weapon);
-    } else {
-      add('Type', row.type || '—');
-      if (row.weapon) add('Weapon', row.weapon);
-    }
-    add('Price each', fmt(row.pricePerItem), { big: true });
-    add('You own', row.count + 'x (' + fmt(row.totalPrice) + ')', { big: true });
-
-    if (row.skywalk) {
-      const e = row.skywalk;
-      if (e.inventory != null) add('Units (Global)', fmt(e.inventory), { big: true });
-      if (e.average != null) add('Average', fmt(parsePrice(e.average)));
-      if (e.automatic != null) add('Automatic', fmt(parsePrice(e.automatic)));
-      if (e.bros != null) add('BROS', fmt(parsePrice(e.bros)));
-      if (e.bolt != null) add('Bolt', fmt(parsePrice(e.bolt)));
-      if (e.fate != null) add('Fate', fmt(parsePrice(e.fate)));
-      if (e.coefficient != null) add('Coefficient', String(e.coefficient));
-      if (e.createdAt) add('Listed since', new Date(e.createdAt).toLocaleDateString());
-    } else {
-      add('Skywalk', 'No matching entry');
-    }
+    fillItemMeta(table, row);
 
     metaCol.appendChild(table);
     wrap.appendChild(metaCol);
@@ -1059,7 +1235,6 @@
       refreshUi(true);
       return;
     }
-    // Replace this tab's items cleanly (no stale duplicates)
     const result = scanVisibleInventory(settings, { replaceTab: true });
     setStatus(
       result.count
@@ -1069,30 +1244,35 @@
     refreshUi(true);
   }
 
+  function menuOverlayCss(visible) {
+    const display = visible ? 'block' : 'none';
+    const extras = visible
+      ? ['visibility:visible', 'opacity:1', 'pointer-events:auto', 'margin:0', 'padding:0']
+      : ['pointer-events:none'];
+    return (
+      [
+        'position:fixed',
+        'top:0',
+        'left:0',
+        'right:0',
+        'bottom:0',
+        'width:100vw',
+        'height:100vh',
+        'z-index:2147483647',
+        'display:' + display,
+      ]
+        .concat(extras)
+        .join(' !important;') + ' !important;'
+    );
+  }
+
   function openMenu() {
     if (!menuRoot) buildMenu();
-    // Force visible — Kirka/community CSS often overrides plain display:flex
     menuRoot.classList.add('ips-open');
-    menuRoot.style.cssText = [
-      'position:fixed',
-      'top:0',
-      'left:0',
-      'right:0',
-      'bottom:0',
-      'width:100vw',
-      'height:100vh',
-      'z-index:2147483647',
-      'display:block',
-      'visibility:visible',
-      'opacity:1',
-      'pointer-events:auto',
-      'margin:0',
-      'padding:0',
-    ].join(' !important;') + ' !important;';
+    menuRoot.style.cssText = menuOverlayCss(true);
     document.body.classList.add('ips-menu-open');
     menuOpen = true;
     setFloatBtnVisible(false);
-    // Button-only scanning — never auto-poll
     fetchPriceList(false)
       .then(() => ensureSkinIndex())
       .then(() => {
@@ -1103,19 +1283,10 @@
 
   function closeMenu() {
     if (!menuRoot) return;
+    closeThemedSelects();
+    closeCatalogPopup();
     menuRoot.classList.remove('ips-open');
-    menuRoot.style.cssText = [
-      'position:fixed',
-      'top:0',
-      'left:0',
-      'right:0',
-      'bottom:0',
-      'width:100vw',
-      'height:100vh',
-      'z-index:2147483647',
-      'display:none',
-      'pointer-events:none',
-    ].join(' !important;') + ' !important;';
+    menuRoot.style.cssText = menuOverlayCss(false);
     document.body.classList.remove('ips-menu-open');
     menuOpen = false;
     setFloatBtnVisible(true);
@@ -1136,10 +1307,22 @@
     setStatus('Cleared cached scan.');
   }
 
+  function syncPricelistSelects(value) {
+    if (ui.plSelect) ui.plSelect.value = value;
+    if (ui.catPlSelect) ui.catPlSelect.value = value;
+  }
+
+  function applyPricelist(value) {
+    saveSettings({ pricelist: value });
+    syncPricelistSelects(value);
+    repriceAll();
+    refreshUi();
+    if (mainTab === 'catalog') renderCatalogGrid();
+  }
+
   function buildMenu() {
     const existing = document.getElementById('ips-menu-root');
     if (existing) {
-      // Stale/empty root from an earlier broken load — rebuild
       if (!existing.querySelector('.ips-panel')) {
         existing.remove();
       } else {
@@ -1155,100 +1338,68 @@
       #ips-menu-root, #ips-menu-root * { box-sizing: border-box !important; }
       #ips-menu-root {
         position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100vw !important;
-        height: 100vh !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-        z-index: 2147483647 !important;
-        display: none !important;
+        top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+        width: 100vw !important; height: 100vh !important;
+        margin: 0 !important; padding: 0 !important; border: none !important;
+        z-index: 2147483647 !important; display: none !important;
         pointer-events: none !important;
         font-family: "Rajdhani", "Segoe UI", system-ui, sans-serif !important;
-        color: #f3f4f6 !important;
-        overflow: hidden !important;
-        visibility: visible !important;
-        opacity: 1 !important;
+        color: #f3f4f6 !important; overflow: hidden !important;
+        visibility: visible !important; opacity: 1 !important;
         background: transparent !important;
+        color-scheme: dark !important;
       }
       #ips-menu-root.ips-open {
-        display: block !important;
-        pointer-events: auto !important;
-        visibility: visible !important;
-        opacity: 1 !important;
+        display: block !important; pointer-events: auto !important;
+        visibility: visible !important; opacity: 1 !important;
       }
       #ips-menu-root .ips-backdrop {
-        position: fixed !important;
-        top: 0 !important; left: 0 !important;
+        position: fixed !important; top: 0 !important; left: 0 !important;
         width: 100vw !important; height: 100vh !important;
         background: rgba(4, 6, 14, 0.82) !important;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
         z-index: 0 !important;
       }
       #ips-menu-root .ips-panel {
-        position: fixed !important;
-        top: 12px !important;
-        left: 12px !important;
-        right: 12px !important;
-        bottom: 12px !important;
-        width: auto !important;
-        height: auto !important;
-        z-index: 1 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        border: 1px solid rgba(255, 170, 70, 0.35) !important;
+        position: fixed !important; top: 12px !important; left: 12px !important;
+        right: 12px !important; bottom: 12px !important;
+        width: auto !important; height: auto !important; z-index: 1 !important;
+        display: flex !important; flex-direction: column !important;
+        border: 1px solid rgba(255,170,70,0.28) !important;
         border-radius: 10px !important;
-        background: linear-gradient(145deg, #12182a 0%, #0b0f18 100%) !important;
-        box-shadow: 0 24px 80px rgba(0,0,0,0.55) !important;
+        background: #10141e !important;
         overflow: hidden !important;
-        opacity: 1 !important;
-        visibility: visible !important;
       }
       #ips-menu-root .ips-header {
         display: flex !important; align-items: center !important; justify-content: space-between !important;
-        gap: 16px !important;
-        padding: 14px 18px !important; border-bottom: 1px solid rgba(255,255,255,0.08) !important;
-        background: rgba(255,140,30,0.06) !important; flex-shrink: 0 !important;
+        gap: 16px !important; padding: 14px 18px !important;
+        flex-shrink: 0 !important; background: rgba(255,255,255,0.02) !important;
+        border-bottom: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-header-left {
         display: flex !important; align-items: center !important; gap: 14px !important;
         min-width: 0 !important; flex: 1 1 auto !important; flex-wrap: wrap !important;
       }
-      #ips-menu-root .ips-header-text { min-width: 0 !important; }
       #ips-menu-root .ips-title {
         margin: 0 !important; font-size: 22px !important; font-weight: 900 !important;
         color: #ffd27a !important; letter-spacing: 0.02em !important;
       }
       #ips-menu-root .ips-sub { margin: 2px 0 0 !important; font-size: 12px !important; color: rgba(255,255,255,0.45) !important; }
-      #ips-menu-root .ips-header-links {
-        display: flex !important; align-items: center !important; gap: 8px !important;
-        flex-wrap: wrap !important;
+      #ips-menu-root .ips-header-links { display: flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important; }
+      #ips-menu-root .ips-link-btn, #ips-menu-root .ips-btn, #ips-menu-root .ips-close, #ips-menu-root .ips-tab, #ips-menu-root .ips-scope-btn {
+        transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease, transform .12s ease !important;
       }
       #ips-menu-root .ips-link-btn {
-        border: 1px solid rgba(255,170,70,0.4) !important;
-        border-radius: 7px !important;
-        background: rgba(0,0,0,0.28) !important;
-        color: #ffe8c0 !important;
-        padding: 7px 12px !important;
-        font: inherit !important;
-        font-size: 12px !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.03em !important;
-        cursor: pointer !important;
-        white-space: nowrap !important;
+        border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 7px !important;
+        background: rgba(255,255,255,0.05) !important; color: #ffe8c0 !important;
+        padding: 7px 12px !important; font: inherit !important; font-size: 12px !important;
+        font-weight: 800 !important; letter-spacing: 0.03em !important;
+        cursor: pointer !important; white-space: nowrap !important;
       }
       #ips-menu-root .ips-link-btn:hover {
-        background: rgba(255,140,30,0.28) !important;
-        border-color: rgba(255,210,120,0.65) !important;
-        color: #fff !important;
+        background: rgba(255,170,70,0.18) !important; border-color: rgba(255,210,120,0.4) !important; color: #fff !important;
       }
-      #ips-menu-root .ips-header-right {
-        display: flex !important; align-items: center !important; gap: 8px !important; flex-shrink: 0 !important;
-      }
+      #ips-menu-root .ips-header-right { display: flex !important; align-items: center !important; gap: 8px !important; flex-shrink: 0 !important; }
       #ips-menu-root .ips-close {
         width: 36px !important; height: 36px !important; border: none !important; border-radius: 8px !important;
         background: rgba(255,255,255,0.08) !important; color: #fff !important; font-size: 22px !important;
@@ -1256,144 +1407,153 @@
       }
       #ips-menu-root .ips-close:hover { background: rgba(255,100,60,0.35) !important; }
       #ips-menu-root .ips-save-tex {
-        width: 100% !important;
-        margin-top: 12px !important;
-        justify-content: center !important;
-        display: inline-flex !important;
-        align-items: center !important;
+        width: 100% !important; margin-top: 12px !important; justify-content: center !important;
+        display: inline-flex !important; align-items: center !important;
       }
       #ips-menu-root .ips-stats {
         display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 8px !important;
-        padding: 10px 18px !important; border-bottom: 1px solid rgba(255,255,255,0.06) !important; flex-shrink: 0 !important;
+        padding: 10px 18px !important; flex-shrink: 0 !important;
+        border-bottom: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-stat {
         padding: 8px 10px !important; border-radius: 8px !important;
-        background: rgba(255,255,255,0.04) !important; border: 1px solid rgba(255,255,255,0.06) !important;
+        background: rgba(255,255,255,0.03) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-stat-label { font-size: 10px !important; text-transform: uppercase !important; color: rgba(255,255,255,0.42) !important; }
       #ips-menu-root .ips-stat-val { font-size: 18px !important; font-weight: 900 !important; color: #ffd27a !important; margin-top: 2px !important; }
-      #ips-menu-root .ips-toolbar {
+      #ips-menu-root .ips-toolbar, #ips-menu-root .ips-catalog-toolbar {
         display: flex !important; flex-wrap: wrap !important; gap: 8px !important; align-items: center !important;
-        padding: 10px 18px !important; border-bottom: 1px solid rgba(255,255,255,0.06) !important; flex-shrink: 0 !important;
+        padding: 10px 18px !important; flex-shrink: 0 !important; flex-grow: 0 !important;
+        border-bottom: 1px solid rgba(255,255,255,0.08) !important;
       }
-      #ips-menu-root .ips-toolbar label { font-size: 12px !important; color: rgba(255,255,255,0.55) !important; }
-      #ips-menu-root .ips-toolbar select, #ips-menu-root .ips-toolbar button {
+      #ips-menu-root .ips-toolbar label, #ips-menu-root .ips-catalog-toolbar label {
+        font-size: 12px !important; color: rgba(255,255,255,0.55) !important;
+      }
+      #ips-menu-root .ips-select { position: relative !important; display: inline-flex !important; }
+      #ips-menu-root .ips-select-btn, #ips-menu-root .ips-select-opt {
         font: inherit !important; font-size: 13px !important; font-weight: 700 !important;
       }
-      #ips-menu-root .ips-toolbar select {
-        background: rgba(0,0,0,0.35) !important; color: #fff !important; border: 1px solid rgba(255,170,70,0.4) !important;
-        border-radius: 6px !important; padding: 6px 8px !important;
+      #ips-menu-root .ips-select-btn {
+        color-scheme: dark !important;
+        background-color: #0c1220 !important;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1.2 1.2L6 6l4.8-4.8' stroke='%23ffe8c0' stroke-width='1.4' fill='none'/></svg>") !important;
+        background-repeat: no-repeat !important; background-position: right 10px center !important;
+        background-size: 12px 8px !important;
+        color: #ffe8c0 !important;
+        border: 1px solid rgba(255,255,255,0.12) !important; border-radius: 6px !important;
+        padding: 6px 30px 6px 10px !important; cursor: pointer !important;
+      }
+      #ips-menu-root .ips-select-btn:hover {
+        border-color: rgba(255,210,120,0.4) !important; background-color: #161c2a !important;
+      }
+      #ips-menu-root .ips-select.ips-disabled .ips-select-btn,
+      #ips-menu-root .ips-select-btn:disabled {
+        opacity: 0.45 !important; cursor: not-allowed !important;
+      }
+      #ips-menu-root .ips-select-menu {
+        display: none; flex-direction: column !important;
+        background: #12182a !important; color: #ffe8c0 !important;
+        border: 1px solid rgba(255,255,255,0.12) !important; border-radius: 8px !important;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.55) !important; overflow: hidden !important; padding: 4px !important;
+      }
+      #ips-menu-root .ips-select-opt {
+        display: block !important; width: 100% !important; text-align: left !important;
+        background: transparent !important; color: #ffe8c0 !important;
+        border: none !important; border-radius: 5px !important;
+        padding: 8px 12px !important; cursor: pointer !important;
+      }
+      #ips-menu-root .ips-select-opt:hover, #ips-menu-root .ips-select-opt-active {
+        background: rgba(255,140,30,0.22) !important; color: #fff !important;
       }
       #ips-menu-root .ips-btn {
-        border: 1px solid rgba(255,170,70,0.45) !important; border-radius: 6px !important;
-        background: rgba(255,140,30,0.18) !important; color: #ffe8c0 !important;
+        border: 1px solid rgba(255,255,255,0.12) !important; border-radius: 6px !important;
+        background: rgba(255,255,255,0.06) !important; color: #ffe8c0 !important;
         padding: 7px 12px !important; cursor: pointer !important;
+        font: inherit !important; font-size: 13px !important; font-weight: 700 !important;
       }
-      #ips-menu-root .ips-btn:hover { background: rgba(255,140,30,0.32) !important; }
+      #ips-menu-root .ips-btn:hover {
+        background: rgba(255,170,70,0.18) !important; border-color: rgba(255,210,120,0.4) !important;
+      }
       #ips-menu-root .ips-btn:disabled { opacity: 0.45 !important; cursor: not-allowed !important; }
       #ips-menu-root .ips-btn-danger {
-        border-color: rgba(255,80,80,0.45) !important; background: rgba(180,40,40,0.2) !important; color: #ffb4b4 !important;
+        background: rgba(180,40,40,0.28) !important; border-color: rgba(255,80,80,0.35) !important; color: #ffb4b4 !important;
       }
       #ips-menu-root .ips-check { display: flex !important; align-items: center !important; gap: 6px !important; font-size: 12px !important; }
+      #ips-menu-root .ips-tab-panes {
+        flex: 1 1 0% !important; min-height: 0 !important; height: auto !important;
+        position: relative !important; overflow: hidden !important;
+      }
+      #ips-menu-root .ips-inv-chrome, #ips-menu-root .ips-catalog-chrome {
+        position: absolute !important; inset: 0 !important;
+        display: flex !important; flex-direction: column !important;
+        min-height: 0 !important; height: 100% !important; overflow: hidden !important;
+        opacity: 0 !important; visibility: hidden !important; pointer-events: none !important;
+      }
+      #ips-menu-root .ips-pane-active {
+        opacity: 1 !important; visibility: visible !important; pointer-events: auto !important;
+      }
       #ips-menu-root .ips-body {
-        flex: 1 1 auto !important; min-height: 0 !important; height: 100% !important; display: grid !important;
-        grid-template-columns: minmax(300px, 380px) 1fr !important; gap: 0 !important;
-        overflow: hidden !important;
+        flex: 1 1 0% !important; min-height: 0 !important; height: auto !important; display: grid !important;
+        grid-template-columns: minmax(300px, 380px) 1fr !important; gap: 0 !important; overflow: hidden !important;
       }
       #ips-menu-root .ips-list-pane {
-        border-right: 1px solid rgba(255,255,255,0.06) !important;
-        padding: 14px 18px !important;
-        overflow-x: hidden !important;
-        overflow-y: scroll !important;
-        height: 100% !important;
-        min-height: 0 !important;
-        display: flex !important;
-        flex-direction: column !important;
+        padding: 14px 18px !important; overflow-x: hidden !important; overflow-y: auto !important;
+        height: 100% !important; min-height: 0 !important;
+        display: flex !important; flex-direction: column !important;
+        border-right: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-list-pane::-webkit-scrollbar,
       #ips-menu-root .ips-detail-pane::-webkit-scrollbar,
-      #ips-menu-root .ips-mini-list::-webkit-scrollbar {
-        width: 12px !important;
-        height: 12px !important;
-        display: block !important;
-        background: rgba(0,0,0,0.25) !important;
+      #ips-menu-root .ips-mini-list::-webkit-scrollbar,
+      #ips-menu-root .ips-catalog-scroll::-webkit-scrollbar {
+        width: 10px !important; height: 10px !important; display: block !important; background: transparent !important;
       }
       #ips-menu-root .ips-list-pane::-webkit-scrollbar-thumb,
       #ips-menu-root .ips-detail-pane::-webkit-scrollbar-thumb,
-      #ips-menu-root .ips-mini-list::-webkit-scrollbar-thumb {
-        background: rgba(255,170,70,0.55) !important;
-        border-radius: 8px !important;
-        border: 2px solid rgba(0,0,0,0.25) !important;
-      }
-      #ips-menu-root .ips-list-pane::-webkit-scrollbar-track,
-      #ips-menu-root .ips-detail-pane::-webkit-scrollbar-track {
-        background: rgba(0,0,0,0.35) !important;
+      #ips-menu-root .ips-mini-list::-webkit-scrollbar-thumb,
+      #ips-menu-root .ips-catalog-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.18) !important; border-radius: 8px !important; border: none !important;
       }
       #ips-menu-root .ips-search {
-        width: 100% !important;
-        margin: 0 0 12px 0 !important;
-        flex-shrink: 0 !important;
-        background: rgba(0,0,0,0.45) !important;
-        color: #fff !important;
-        border: 1px solid rgba(255,170,70,0.45) !important;
-        border-radius: 8px !important;
-        padding: 10px 12px !important;
-        font: inherit !important;
-        font-size: 15px !important;
-        font-weight: 700 !important;
-        outline: none !important;
+        width: 100% !important; margin: 0 0 12px 0 !important; flex-shrink: 0 !important;
+        background: rgba(255,255,255,0.04) !important; color: #fff !important;
+        border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 8px !important;
+        padding: 10px 12px !important; font: inherit !important; font-size: 15px !important;
+        font-weight: 700 !important; outline: none !important;
       }
-      #ips-menu-root .ips-search::placeholder {
-        color: rgba(255,255,255,0.35) !important;
-      }
+      #ips-menu-root .ips-search::placeholder { color: rgba(255,255,255,0.35) !important; }
       #ips-menu-root .ips-mini-list {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 4px !important;
-        flex: 1 1 auto !important;
-        min-height: 0 !important;
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        padding-right: 4px !important;
+        display: flex !important; flex-direction: column !important; gap: 4px !important;
+        flex: 1 1 auto !important; min-height: 0 !important; overflow-y: auto !important;
+        overflow-x: hidden !important; padding-right: 4px !important;
       }
       #ips-menu-root .ips-mini-item {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-        padding: 8px 10px !important;
-        border-radius: 6px !important;
-        cursor: pointer !important;
-        border: 1px solid transparent !important;
-        background: rgba(255,255,255,0.03) !important;
-        user-select: none !important;
-        -webkit-user-select: none !important;
-        flex-shrink: 0 !important;
-        pointer-events: auto !important;
+        display: flex !important; align-items: center !important; gap: 8px !important;
+        padding: 8px 10px !important; border-radius: 7px !important; cursor: pointer !important;
+        border: 1px solid transparent !important; background: rgba(255,255,255,0.03) !important;
+        user-select: none !important; flex-shrink: 0 !important;
+        transition: background .15s ease, border-color .15s ease !important;
       }
       #ips-menu-root .ips-mini-item:hover, #ips-menu-root .ips-mini-item.ips-active {
-        border-color: rgba(255,170,70,0.35) !important;
-        background: rgba(255,140,30,0.12) !important;
+        background: rgba(255,170,70,0.16) !important; border-color: rgba(255,210,120,0.35) !important;
       }
       #ips-menu-root .ips-mini-thumb {
         width: 40px !important; height: 40px !important; object-fit: contain !important;
-        background: rgba(0,0,0,0.35) !important; border-radius: 4px !important;
+        background: transparent !important; border-radius: 4px !important;
         pointer-events: none !important; flex-shrink: 0 !important;
       }
       #ips-menu-root .ips-mini-meta { flex: 1 !important; min-width: 0 !important; pointer-events: none !important; }
       #ips-menu-root .ips-mini-name {
         font-size: 14px !important; font-weight: 800 !important;
-        white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
-        color: #fff !important;
+        white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; color: #fff !important;
       }
       #ips-menu-root .ips-mini-price {
         font-size: 12px !important; color: rgba(255,255,255,0.7) !important;
-        display: flex !important; flex-wrap: wrap !important; gap: 6px !important; align-items: center !important;
-        margin-top: 2px !important;
+        display: flex !important; flex-wrap: wrap !important; gap: 6px !important; align-items: center !important; margin-top: 2px !important;
       }
       #ips-menu-root .ips-mini-price .ips-val { color: #ffd27a !important; font-weight: 800 !important; }
-      #ips-menu-root .ips-rarity {
-        font-weight: 900 !important; letter-spacing: 0.02em !important;
-      }
+      #ips-menu-root .ips-rarity { font-weight: 900 !important; letter-spacing: 0.02em !important; }
       #ips-menu-root .ips-rarity-u { color: #b0b8c4 !important; }
       #ips-menu-root .ips-rarity-c { color: #65d58b !important; }
       #ips-menu-root .ips-rarity-r { color: #4ea1ff !important; }
@@ -1401,140 +1561,96 @@
       #ips-menu-root .ips-rarity-l { color: #ffd27a !important; }
       #ips-menu-root .ips-rarity-m { color: #ff3b4a !important; }
       #ips-menu-root .ips-rarity-p {
-        color: #111 !important;
-        background: #f0f0f0 !important;
-        padding: 0 5px !important;
-        border-radius: 3px !important;
+        color: #111 !important; background: #f0f0f0 !important; padding: 0 5px !important; border-radius: 3px !important;
       }
       #ips-menu-root .ips-detail-pane {
-        padding: 18px 22px !important;
-        overflow: auto !important;
-        height: 100% !important;
-        min-height: 0 !important;
+        padding: 18px 22px !important; overflow: auto !important; height: 100% !important; min-height: 0 !important;
       }
-      #ips-menu-root .ips-detail-grid {
-        display: grid !important;
-        grid-template-columns: minmax(280px, 42%) 1fr !important;
-        gap: 28px !important;
-        align-items: start !important;
-        min-height: 100% !important;
+      #ips-menu-root .ips-detail-grid, #ips-menu-root .ips-popup-body {
+        display: grid !important; grid-template-columns: minmax(220px, 34%) 1fr !important;
+        gap: 28px !important; align-items: start !important;
       }
-      #ips-menu-root .ips-detail-img-col {
-        position: sticky !important;
-        top: 0 !important;
+      #ips-menu-root .ips-detail-img-col, #ips-menu-root .ips-popup-img-col { min-width: 0 !important; }
+      #ips-menu-root .ips-popup-img-col {
+        display: flex !important; flex-direction: column !important; align-items: stretch !important;
+        justify-content: center !important;
+        background: rgba(0,0,0,0.28) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 10px !important;
+        padding: 16px 14px !important;
       }
-      #ips-menu-root .ips-detail-img {
-        width: 100% !important;
-        min-height: 320px !important;
-        max-height: min(58vh, 520px) !important;
-        object-fit: contain !important;
-        background: rgba(0,0,0,0.4) !important;
-        border-radius: 12px !important;
-        padding: 16px !important;
-        border: 1px solid rgba(255,170,70,0.2) !important;
+      #ips-menu-root .ips-detail-img, #ips-menu-root .ips-popup-img {
+        width: 100% !important; height: 250px !important; max-height: 250px !important;
+        object-fit: contain !important; object-position: center !important;
+        background: transparent !important;
+        border-radius: 0 !important; padding: 0 !important; border: none !important;
       }
       #ips-menu-root .ips-no-img {
-        width: 100% !important; min-height: 280px !important;
+        width: 100% !important; min-height: 220px !important;
         display: flex !important; align-items: center !important; justify-content: center !important;
-        background: rgba(0,0,0,0.35) !important; border-radius: 12px !important;
+        background: transparent !important; border-radius: 8px !important;
         color: rgba(255,255,255,0.35) !important; font-size: 16px !important;
       }
       #ips-menu-root .ips-detail-title {
-        margin: 0 0 8px !important; font-size: 34px !important; font-weight: 900 !important; color: #fff !important;
-        line-height: 1.1 !important;
+        margin: 0 0 6px !important; font-size: 28px !important; font-weight: 900 !important; color: #fff !important; line-height: 1.1 !important;
       }
       #ips-menu-root .ips-detail-rarity {
-        display: inline-block !important;
-        font-size: 16px !important;
-        font-weight: 900 !important;
-        margin-bottom: 18px !important;
+        display: inline-block !important; font-size: 16px !important; font-weight: 900 !important; margin-bottom: 18px !important;
       }
       #ips-menu-root .ips-kv {
-        display: grid !important;
-        grid-template-columns: 180px 1fr !important;
-        gap: 12px 18px !important;
-        margin: 0 !important;
-        align-items: baseline !important;
+        display: grid !important; grid-template-columns: 160px minmax(0, 1fr) !important;
+        gap: 10px 16px !important; margin: 0 !important; align-items: baseline !important;
       }
-      #ips-menu-root .ips-kv dt {
-        color: rgba(255,255,255,0.45) !important;
-        font-size: 15px !important;
-        font-weight: 700 !important;
-      }
+      #ips-menu-root .ips-kv dt { color: rgba(255,255,255,0.45) !important; font-size: 15px !important; font-weight: 700 !important; }
       #ips-menu-root .ips-kv dd {
-        margin: 0 !important;
-        font-size: 18px !important;
-        font-weight: 800 !important;
-        color: #fff !important;
+        margin: 0 !important; font-size: 18px !important; font-weight: 800 !important; color: #fff !important;
+        overflow-wrap: anywhere !important; word-break: break-word !important;
       }
-      #ips-menu-root .ips-kv dd.ips-kv-big {
-        font-size: 28px !important;
-        font-weight: 900 !important;
-        color: #ffd27a !important;
-      }
+      #ips-menu-root .ips-kv dd.ips-kv-big { font-size: 28px !important; font-weight: 900 !important; color: #ffd27a !important; }
       #ips-menu-root .ips-empty { color: rgba(255,255,255,0.4) !important; font-size: 16px !important; }
       #ips-menu-root .ips-footer {
-        padding: 8px 18px !important; border-top: 1px solid rgba(255,255,255,0.06) !important;
+        padding: 8px 18px !important;
         font-size: 11px !important; color: rgba(255,255,255,0.38) !important;
         display: flex !important; justify-content: space-between !important; gap: 12px !important; flex-shrink: 0 !important;
+        border-top: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-status { color: #ffd27a !important; }
       #ips-menu-root .ips-tabs {
-        display: flex !important; gap: 6px !important; padding: 8px 18px 0 !important;
-        flex-shrink: 0 !important; border-bottom: 1px solid rgba(255,255,255,0.06) !important;
+        display: flex !important; gap: 4px !important; padding: 6px 18px 8px !important;
+        flex-shrink: 0 !important; border-bottom: 1px solid rgba(255,255,255,0.08) !important;
       }
       #ips-menu-root .ips-tab {
-        border: 1px solid transparent !important; border-bottom: none !important;
-        border-radius: 8px 8px 0 0 !important;
-        background: transparent !important; color: rgba(255,255,255,0.55) !important;
-        padding: 8px 16px !important; font: inherit !important; font-size: 13px !important;
-        font-weight: 800 !important; cursor: pointer !important; letter-spacing: 0.03em !important;
+        border: 1px solid transparent !important; border-radius: 6px !important; background: transparent !important;
+        color: rgba(255,255,255,0.5) !important; padding: 7px 14px !important;
+        font: inherit !important; font-size: 13px !important; font-weight: 800 !important;
+        cursor: pointer !important; letter-spacing: 0.03em !important;
       }
-      #ips-menu-root .ips-tab:hover { color: #ffe8c0 !important; background: rgba(255,140,30,0.1) !important; }
+      #ips-menu-root .ips-tab:hover { color: #ffe8c0 !important; background: rgba(255,255,255,0.06) !important; }
       #ips-menu-root .ips-tab.ips-tab-active {
-        color: #ffd27a !important; background: rgba(255,140,30,0.16) !important;
-        border-color: rgba(255,170,70,0.35) !important;
+        color: #ffd27a !important; background: rgba(255,170,70,0.12) !important;
+        border-color: rgba(255,210,120,0.28) !important;
       }
-      #ips-menu-root .ips-inv-chrome,
-      #ips-menu-root .ips-catalog-chrome {
-        flex: 1 1 auto !important; min-height: 0 !important;
-        display: flex !important; flex-direction: column !important; overflow: hidden !important;
-      }
-      #ips-menu-root .ips-catalog-toolbar {
-        display: flex !important; flex-wrap: wrap !important; gap: 8px !important;
-        align-items: center !important; padding: 10px 18px !important;
-        border-bottom: 1px solid rgba(255,255,255,0.06) !important; flex-shrink: 0 !important;
-      }
-      #ips-menu-root .ips-catalog-search {
-        flex: 1 1 220px !important; min-width: 160px !important; margin: 0 !important;
-      }
-      #ips-menu-root .ips-scope {
-        display: flex !important; flex-wrap: wrap !important; gap: 6px !important;
-      }
+      #ips-menu-root .ips-catalog-search { flex: 1 1 220px !important; min-width: 160px !important; margin: 0 !important; }
+      #ips-menu-root .ips-scope { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; }
       #ips-menu-root .ips-scope-btn {
-        border: 1px solid rgba(255,170,70,0.35) !important; border-radius: 6px !important;
-        background: rgba(0,0,0,0.28) !important; color: rgba(255,255,255,0.7) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 6px !important;
+        background: rgba(255,255,255,0.04) !important; color: rgba(255,255,255,0.7) !important;
         padding: 6px 10px !important; font: inherit !important; font-size: 12px !important;
         font-weight: 800 !important; cursor: pointer !important;
       }
       #ips-menu-root .ips-scope-btn.ips-scope-active {
-        background: rgba(255,140,30,0.28) !important; color: #ffe8c0 !important;
-        border-color: rgba(255,210,120,0.55) !important;
+        background: rgba(255,170,70,0.16) !important; color: #ffe8c0 !important;
+        border-color: rgba(255,210,120,0.35) !important;
       }
       #ips-menu-root .ips-catalog-count {
         font-size: 12px !important; color: rgba(255,255,255,0.45) !important;
         font-weight: 700 !important; margin-left: auto !important;
       }
       #ips-menu-root .ips-catalog-scroll {
-        flex: 1 1 auto !important; min-height: 0 !important; overflow: auto !important;
-        padding: 12px 18px 18px !important;
-      }
-      #ips-menu-root .ips-catalog-scroll::-webkit-scrollbar {
-        width: 12px !important; display: block !important; background: rgba(0,0,0,0.25) !important;
-      }
-      #ips-menu-root .ips-catalog-scroll::-webkit-scrollbar-thumb {
-        background: rgba(255,170,70,0.55) !important; border-radius: 8px !important;
-        border: 2px solid rgba(0,0,0,0.25) !important;
+        flex: 1 1 0% !important; min-height: 0 !important; height: auto !important;
+        overflow-x: hidden !important; overflow-y: scroll !important;
+        -webkit-overflow-scrolling: touch !important; overscroll-behavior: contain !important;
+        padding: 8px 18px 28px !important;
       }
       #ips-menu-root .ips-cat-section { margin-bottom: 18px !important; }
       #ips-menu-root .ips-cat-heading {
@@ -1542,9 +1658,7 @@
         color: #ffd27a !important; letter-spacing: 0.04em !important; text-transform: uppercase !important;
       }
       #ips-menu-root .ips-cat-grid {
-        display: grid !important;
-        grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-        gap: 10px !important;
+        display: grid !important; grid-template-columns: repeat(6, minmax(0, 1fr)) !important; gap: 10px !important;
       }
       @media (max-width: 1400px) {
         #ips-menu-root .ips-cat-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
@@ -1555,30 +1669,58 @@
       #ips-menu-root .ips-cat-card {
         display: flex !important; flex-direction: column !important; gap: 6px !important;
         padding: 8px !important; border-radius: 8px !important;
-        border: 2px solid rgba(255,170,70,0.35) !important;
-        background: rgba(255,255,255,0.03) !important; min-width: 0 !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: rgba(255,255,255,0.04) !important; min-width: 0 !important;
+        color: inherit !important; text-align: left !important; font: inherit !important;
+        cursor: pointer !important;
+        transition: background .15s ease, border-color .15s ease, transform .12s ease !important;
       }
-      #ips-menu-root .ips-cat-card:hover {
-        background: rgba(255,140,30,0.1) !important;
+      #ips-menu-root .ips-cat-card:hover, #ips-menu-root .ips-cat-card:focus-visible {
+        background: rgba(255,170,70,0.16) !important;
+        border-color: rgba(255,210,120,0.4) !important;
+        transform: translateY(-1px) !important; outline: none !important;
       }
       #ips-menu-root .ips-cat-img {
         width: 100% !important; aspect-ratio: 1 / 1 !important; object-fit: contain !important;
-        background: rgba(0,0,0,0.35) !important; border-radius: 6px !important;
-        pointer-events: none !important;
+        object-position: center !important;
+        background: rgba(0,0,0,0.22) !important; border-radius: 6px !important; pointer-events: none !important;
+        padding: 8px !important;
       }
       #ips-menu-root .ips-cat-img-char {
-        object-fit: cover !important; object-position: top center !important;
+        object-fit: contain !important; object-position: center bottom !important; padding: 6px 6px 0 !important;
       }
       #ips-menu-root .ips-cat-name {
         font-size: 12px !important; font-weight: 800 !important; color: #fff !important;
-        white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
-        line-height: 1.2 !important;
+        white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.2 !important;
       }
       #ips-menu-root .ips-cat-meta {
         display: flex !important; justify-content: space-between !important; gap: 6px !important;
         font-size: 11px !important; color: rgba(255,255,255,0.5) !important; font-weight: 700 !important;
       }
       #ips-menu-root .ips-cat-price { color: #ffd27a !important; font-weight: 800 !important; }
+      #ips-menu-root .ips-cat-modal {
+        position: absolute !important; inset: 0 !important; z-index: 6 !important;
+        display: none !important; align-items: center !important; justify-content: center !important;
+        padding: 56px 48px !important; overflow: auto !important;
+      }
+      #ips-menu-root .ips-cat-modal.ips-open { display: flex !important; }
+      #ips-menu-root .ips-popup-back {
+        position: absolute !important; inset: 0 !important; border: none !important; padding: 0 !important;
+        background: rgba(6, 8, 14, 0.55) !important; cursor: pointer !important;
+      }
+      #ips-menu-root .ips-popup-card {
+        position: relative !important; z-index: 1 !important;
+        width: min(920px, 100%) !important; max-width: 920px !important;
+        overflow: visible !important;
+        margin: auto !important; padding: 32px 36px 36px !important; border-radius: 12px !important;
+        border: 1px solid rgba(255,170,70,0.32) !important; background: #161b28 !important;
+      }
+      #ips-menu-root .ips-popup-meta { min-width: 0 !important; overflow: visible !important; }
+      #ips-menu-root .ips-popup-close {
+        position: absolute !important; top: 12px !important; right: 12px !important;
+        width: 36px !important; height: 36px !important; z-index: 2 !important;
+        cursor: pointer !important;
+      }
       body.ips-menu-open { overflow: hidden !important; }
     `;
       document.head.appendChild(style);
@@ -1586,8 +1728,7 @@
 
     menuRoot = document.createElement('div');
     menuRoot.id = 'ips-menu-root';
-    menuRoot.style.cssText =
-      'position:fixed !important; top:0 !important; left:0 !important; right:0 !important; bottom:0 !important; width:100vw !important; height:100vh !important; z-index:2147483647 !important; display:none !important; pointer-events:none !important;';
+    menuRoot.style.cssText = menuOverlayCss(false);
 
     const backdrop = document.createElement('div');
     backdrop.className = 'ips-backdrop';
@@ -1610,7 +1751,7 @@
     title.textContent = 'Inventory Price Scanner';
     const sub = document.createElement('p');
     sub.className = 'ips-sub';
-    sub.textContent = `v${VERSION} · Ctrl+K · button-only scan`;
+    sub.textContent = `v${VERSION} · Ctrl+K · Scan Inventory, or search Skin Catalog`;
     headText.appendChild(title);
     headText.appendChild(sub);
     headerLeft.appendChild(headText);
@@ -1659,14 +1800,17 @@
     ui.tabCat.type = 'button';
     ui.tabCat.className = 'ips-tab';
     ui.tabCat.textContent = 'Catalog';
-    ui.tabCat.title = 'Browse all Skywalk items (characters + weapons)';
+    ui.tabCat.title = 'Look up any Skywalk item';
     ui.tabCat.addEventListener('click', () => setMainTab('catalog'));
     tabs.appendChild(ui.tabInv);
     tabs.appendChild(ui.tabCat);
     panel.appendChild(tabs);
 
+    const panes = document.createElement('div');
+    panes.className = 'ips-tab-panes';
+
     ui.invChrome = document.createElement('div');
-    ui.invChrome.className = 'ips-inv-chrome';
+    ui.invChrome.className = 'ips-inv-chrome ips-pane-active';
 
     const stats = document.createElement('div');
     stats.className = 'ips-stats';
@@ -1692,28 +1836,13 @@
 
     const toolbar = document.createElement('div');
     toolbar.className = 'ips-toolbar';
-
     const settings = loadSettings();
 
     const plLabel = document.createElement('label');
     plLabel.textContent = 'Pricelist';
     toolbar.appendChild(plLabel);
-    const plSelect = document.createElement('select');
-    PRICELIST_OPTIONS.forEach((opt) => {
-      const o = document.createElement('option');
-      o.value = opt.value;
-      o.textContent = opt.label;
-      plSelect.appendChild(o);
-    });
-    plSelect.value = settings.pricelist;
-    plSelect.addEventListener('change', () => {
-      saveSettings({ pricelist: plSelect.value });
-      repriceAll();
-      refreshUi();
-      if (mainTab === 'catalog') renderCatalogGrid();
-      if (ui.catPlSelect) ui.catPlSelect.value = plSelect.value;
-    });
-    toolbar.appendChild(plSelect);
+    ui.plSelect = createThemedSelect(settings.pricelist, (value) => applyPricelist(value));
+    toolbar.appendChild(ui.plSelect.el);
 
     const fbLabel = document.createElement('label');
     const fbCheck = document.createElement('input');
@@ -1722,13 +1851,24 @@
     fbLabel.className = 'ips-check';
     fbLabel.appendChild(fbCheck);
     fbLabel.appendChild(document.createTextNode('Fallback'));
-    fbCheck.addEventListener('change', () => {
-      saveSettings({ fallbackOn: fbCheck.checked });
+    toolbar.appendChild(fbLabel);
+
+    ui.fbSelect = createThemedSelect(settings.fallbackList, (value) => {
+      saveSettings({ fallbackList: value });
       repriceAll();
       refreshUi();
       if (mainTab === 'catalog') renderCatalogGrid();
     });
-    toolbar.appendChild(fbLabel);
+    ui.fbSelect.disabled = !settings.fallbackOn;
+    toolbar.appendChild(ui.fbSelect.el);
+
+    fbCheck.addEventListener('change', () => {
+      saveSettings({ fallbackOn: fbCheck.checked });
+      ui.fbSelect.disabled = !fbCheck.checked;
+      repriceAll();
+      refreshUi();
+      if (mainTab === 'catalog') renderCatalogGrid();
+    });
 
     ui.scanBtn = document.createElement('button');
     ui.scanBtn.type = 'button';
@@ -1750,7 +1890,6 @@
     clearBtn.textContent = 'Clear cache';
     clearBtn.addEventListener('click', () => clearScanned());
     toolbar.appendChild(clearBtn);
-
     ui.invChrome.appendChild(toolbar);
 
     const body = document.createElement('div');
@@ -1758,11 +1897,10 @@
 
     const listPane = document.createElement('div');
     listPane.className = 'ips-list-pane';
-
     ui.searchInput = document.createElement('input');
     ui.searchInput.type = 'search';
     ui.searchInput.className = 'ips-search';
-    ui.searchInput.placeholder = 'Search skins, weapons, rarity…';
+    ui.searchInput.placeholder = 'Search scanned items…';
     ui.searchInput.autocomplete = 'off';
     ui.searchInput.addEventListener('input', () => {
       searchQuery = ui.searchInput.value || '';
@@ -1773,15 +1911,11 @@
     ui.miniList = document.createElement('div');
     ui.miniList.className = 'ips-mini-list';
     listPane.appendChild(ui.miniList);
-
-    // Delegated click — no per-row listeners, single reliable hit target
     ui.miniList.addEventListener(
       'pointerdown',
       (event) => {
         const item =
-          event.target && event.target.closest
-            ? event.target.closest('.ips-mini-item')
-            : null;
+          event.target && event.target.closest ? event.target.closest('.ips-mini-item') : null;
         if (!item || !ui.miniList.contains(item)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -1791,18 +1925,14 @@
     );
 
     body.appendChild(listPane);
-
     ui.detail = document.createElement('div');
     ui.detail.className = 'ips-detail-pane';
     body.appendChild(ui.detail);
-
     ui.invChrome.appendChild(body);
-    panel.appendChild(ui.invChrome);
+    panes.appendChild(ui.invChrome);
 
-    // —— Catalog tab (Skywalk items.html style, memory-cached list) ——
     ui.catalogChrome = document.createElement('div');
     ui.catalogChrome.className = 'ips-catalog-chrome';
-    ui.catalogChrome.style.display = 'none';
 
     const catToolbar = document.createElement('div');
     catToolbar.className = 'ips-catalog-toolbar';
@@ -1847,22 +1977,8 @@
     const catPlLabel = document.createElement('label');
     catPlLabel.textContent = 'Price';
     catToolbar.appendChild(catPlLabel);
-    ui.catPlSelect = document.createElement('select');
-    PRICELIST_OPTIONS.forEach((opt) => {
-      const o = document.createElement('option');
-      o.value = opt.value;
-      o.textContent = opt.label;
-      ui.catPlSelect.appendChild(o);
-    });
-    ui.catPlSelect.value = settings.pricelist;
-    ui.catPlSelect.addEventListener('change', () => {
-      saveSettings({ pricelist: ui.catPlSelect.value });
-      plSelect.value = ui.catPlSelect.value;
-      repriceAll();
-      refreshUi();
-      renderCatalogGrid();
-    });
-    catToolbar.appendChild(ui.catPlSelect);
+    ui.catPlSelect = createThemedSelect(settings.pricelist, (value) => applyPricelist(value));
+    catToolbar.appendChild(ui.catPlSelect.el);
 
     const refreshCatBtn = document.createElement('button');
     refreshCatBtn.type = 'button';
@@ -1881,29 +1997,61 @@
 
     ui.catalogCount = document.createElement('span');
     ui.catalogCount.className = 'ips-catalog-count';
-    ui.catalogCount.textContent = '';
     catToolbar.appendChild(ui.catalogCount);
-
     ui.catalogChrome.appendChild(catToolbar);
 
     ui.catalogScroll = document.createElement('div');
     ui.catalogScroll.className = 'ips-catalog-scroll';
     ui.catalogChrome.appendChild(ui.catalogScroll);
-    panel.appendChild(ui.catalogChrome);
+    panes.appendChild(ui.catalogChrome);
+    panel.appendChild(panes);
+
+    ui.catModal = document.createElement('div');
+    ui.catModal.className = 'ips-cat-modal';
+    ui.catModal.setAttribute('aria-hidden', 'true');
+    const popupBack = document.createElement('button');
+    popupBack.type = 'button';
+    popupBack.className = 'ips-popup-back';
+    popupBack.setAttribute('aria-label', 'Close item');
+    popupBack.addEventListener('click', () => closeCatalogPopup());
+    ui.catModal.appendChild(popupBack);
+
+    const popupCard = document.createElement('div');
+    popupCard.className = 'ips-popup-card';
+    ui.popupCard = popupCard;
+    const popupClose = document.createElement('button');
+    popupClose.type = 'button';
+    popupClose.className = 'ips-close ips-popup-close';
+    popupClose.title = 'Close (Esc)';
+    popupClose.textContent = '×';
+    popupClose.addEventListener('click', () => closeCatalogPopup());
+    popupCard.appendChild(popupClose);
+    ui.catModalBody = document.createElement('div');
+    ui.catModalBody.className = 'ips-popup-body';
+    popupCard.appendChild(ui.catModalBody);
+    ui.catModal.appendChild(popupCard);
+    panel.appendChild(ui.catModal);
 
     const footer = document.createElement('div');
     footer.className = 'ips-footer';
     ui.status = document.createElement('span');
     ui.status.className = 'ips-status';
     ui.status.textContent =
-      'Open Kirka inventory, then press Scan current tab or Scan all tabs. No auto-scan.';
+      'Open Kirka inventory, then press Scan current tab or Scan all tabs.';
     footer.appendChild(ui.status);
     const hint = document.createElement('span');
-    hint.textContent = 'Esc or × to close · Catalog uses Skywalk list (not localStorage dumps)';
+    hint.textContent = 'Scan Inventory, or search Skin Catalog';
     footer.appendChild(hint);
     panel.appendChild(footer);
 
     menuRoot.appendChild(panel);
+    menuRoot.addEventListener('pointerdown', (event) => {
+      const t = event.target;
+      if (t && t.closest && t.closest('.ips-select, .ips-select-menu, .ips-select-btn, .ips-select-opt')) {
+        return;
+      }
+      closeThemedSelects();
+    });
     (document.body || document.documentElement).appendChild(menuRoot);
   }
 
@@ -1932,8 +2080,8 @@
       empty.className = 'ips-empty';
       empty.style.padding = '8px';
       empty.textContent = scannedItems.size
-        ? 'No items match your search.'
-        : 'No items scanned yet — open inventory & scan.';
+        ? 'No scanned items match your search.'
+        : 'No items scanned yet — open inventory and scan.';
       frag.appendChild(empty);
     } else {
       rows.forEach((row) => {
@@ -1952,29 +2100,22 @@
 
         const meta = document.createElement('div');
         meta.className = 'ips-mini-meta';
-
         const name = document.createElement('div');
         name.className = 'ips-mini-name';
         name.textContent = row.name;
-
         const price = document.createElement('div');
         price.className = 'ips-mini-price';
-
         const val = document.createElement('span');
         val.className = 'ips-val';
         val.textContent = fmt(row.totalPrice);
-
         const count = document.createElement('span');
         count.textContent = row.count + 'x';
-
         const rarity = document.createElement('span');
         rarity.className = 'ips-rarity ' + rarityClass(row.rarity);
         rarity.textContent = row.rarityLabel;
-
         price.appendChild(val);
         price.appendChild(count);
         price.appendChild(rarity);
-
         meta.appendChild(name);
         meta.appendChild(price);
         item.appendChild(meta);
@@ -2011,25 +2152,15 @@
       style.id = 'ips-float-styles';
       style.textContent = `
         #ips-float-btn {
-          position: fixed;
-          right: 14px;
-          bottom: 14px;
-          z-index: 2147483000;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 14px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 170, 70, 0.55);
-          background: rgba(18, 24, 42, 0.92);
-          color: #ffe8c0;
+          position: fixed; right: 14px; bottom: 14px; z-index: 2147483000;
+          display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+          border-radius: 999px; border: 1px solid rgba(255, 170, 70, 0.55);
+          background: rgba(18, 24, 42, 0.92); color: #ffe8c0;
           font-family: "Rajdhani", "Segoe UI", system-ui, sans-serif;
-          font-size: 13px;
-          font-weight: 900;
-          letter-spacing: 0.03em;
-          cursor: pointer;
+          font-size: 13px; font-weight: 900; letter-spacing: 0.03em;
+          cursor: pointer; pointer-events: auto;
           box-shadow: 0 8px 28px rgba(0,0,0,0.45), 0 0 16px rgba(255,140,30,0.25);
-          pointer-events: auto;
+          transition: background .15s ease, border-color .15s ease, transform .12s ease;
         }
         #ips-float-btn:hover {
           background: rgba(255, 140, 30, 0.22);
@@ -2037,8 +2168,7 @@
         }
         #ips-float-btn .ips-float-dot {
           width: 8px; height: 8px; border-radius: 50%;
-          background: #ffd27a;
-          box-shadow: 0 0 8px rgba(255,210,120,0.9);
+          background: #ffd27a; box-shadow: 0 0 8px rgba(255,210,120,0.9);
         }
       `;
       document.head.appendChild(style);
@@ -2075,18 +2205,18 @@
     document.addEventListener(
       'keydown',
       (event) => {
-        if (event.key === 'Escape' && menuOpen) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          closeMenu();
-        }
+        if (event.key !== 'Escape' || !menuOpen) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (document.querySelector('#ips-menu-root .ips-select.ips-open')) closeThemedSelects();
+        else if (isCatalogPopupOpen()) closeCatalogPopup();
+        else closeMenu();
       },
       true
     );
   }
 
   function initInventoryPriceScanner() {
-    // Drop stale menu/styles from older broken builds
     const staleRoot = document.getElementById('ips-menu-root');
     if (staleRoot) staleRoot.remove();
     const staleStyle = document.getElementById('ips-menu-styles');
