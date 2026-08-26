@@ -2,7 +2,7 @@
 // @name          Inventory Price Scanner
 // @version      0.2.0
 // @description  Ctrl+K for menu
-//  inventory pricer, scans each page (charecters, wpns, chests,) Prices from luke skywalk (avg/BROS/yzzz).
+//  inventory pricer, scans each page (chars, wpns, chests,) Prices from luke skywalk (avg/BROS/yzzz).
 // @author       napkin
 // ==/UserScript==
 
@@ -14,13 +14,13 @@
 
   const PRICE_API_URL = 'https://kirka.lukeskywalk.com/finalUpdatedBaseList.json';
   const SKINS_JSON_URL =
-    'https://raw.githubusercontent.com/nnapkin12/scripts-and-projects/main/skins.json';
+    'https://raw.githubusercontent.com/nnapkin12/napkin-theme-assets/main/misc/skins.json';
   const SKYWALK_SITE_URL = 'https://kirka.lukeskywalk.com/';
   const SKYWALK_RENDER_CDN = 'https://kirka.lukeskywalk.com/static/renders/';
   const SKYWALK_ITEMS_URL = 'https://kirka.lukeskywalk.com/items.html';
   const SKINS_DB_PAGE_URL =
-    'https://github.com/nnapkin12/scripts-and-projects/blob/main/skins.json';
-  const SKINS_REPO_URL = 'https://github.com/nnapkin12/scripts-and-projects';
+    'https://github.com/nnapkin12/napkin-theme-assets/blob/main/misc/skins.json';
+  const SKINS_REPO_URL = 'https://github.com/nnapkin12/napkin-theme-assets';
   const SKINS_CACHE_KEY = 'nap-invscan-skins-v2';
 
   const SCAN_POLL_MS = 200; // unused — scans are button-only
@@ -1632,7 +1632,7 @@
     }
     makeLinkBtn('Skywalk', SKYWALK_SITE_URL, 'Open kirka.lukeskywalk.com');
     makeLinkBtn('Skins DB', SKINS_DB_PAGE_URL, 'Open NAP skins.json database');
-    makeLinkBtn('my GitHub', SKINS_REPO_URL, 'Open nnapkin12/scripts-and-projects');
+    makeLinkBtn('my GitHub', SKINS_REPO_URL, 'Open nnapkin12/napkin-theme-assets');
     headerLeft.appendChild(links);
     header.appendChild(headerLeft);
 
