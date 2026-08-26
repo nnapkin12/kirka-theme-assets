@@ -14,5 +14,3 @@ Gives a new look and places FPS/Ping on the bottom right, it uses the already ex
 <p align="center">
   <img src="misc/FPS-PING-Preview.jpg" alt="FPS and Ping Display Preview" width="420">
 </p>
-> [!NOTE]
-> made you look.
