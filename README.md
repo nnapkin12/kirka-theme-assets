@@ -24,5 +24,5 @@ Gives a new look and places FPS/Ping on the bottom right, it uses the already ex
 **Ctrl+O** to toggle menu. Made this from existing Gun scale Mod scripts, and added 3 custom weapon animations: **spin clockwise**, a **cowboy-esc twirl**, and experiemntal nudge out+clockwise(not that smooth). you can swap these animations for each gun, aswell as a knife butterfly/spin animation(which is hardcoded to only toma/bayonet) you can change the keybind for animations aswell, and they go through kirka, so i could bind it to my reload keybind and it still works. **Ctrl+O** to toggle menu
 
 <p align="center">
-  <img src="misc/Wpn-anim-gunscale-preview.png" alt="WPN-anims and Gun Scale mod Preview" width="420">
+  <img src="misc/Wpn-anim-gunscale-preview.png" alt="WPN-anims and Gun Scale mod Preview" width="840">
 </p>
