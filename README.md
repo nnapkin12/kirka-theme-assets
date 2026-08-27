@@ -7,7 +7,7 @@ This repo is compiled assets i use for kirka.io and other games, i didnot create
 [Inventory Price Scanner](https://github.com/nnapkin12/napkin-theme-assets/blob/main/Scripts/InventoryPriceScanner.js): From an existing inventory pricing script, i just extended it to have a menu(ctrl+K), with metadata for each item it picks up, aswell as a catalog of all skins to view all of their information.
 
 <p align="center">
-  <img src="misc/inv-scan-preview.png" alt="Inventory Price Scanner preview" width="420">
+  <img src="misc/inv-scan-preview.png" alt="Inventory Price Scanner preview" width="1001">
 </p>
 
 
