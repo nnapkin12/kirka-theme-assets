@@ -1,8 +1,8 @@
 {
   "v": 2,
-  "version": "2026.07.09.702",
-  "generated": "2026-07-09T21:11:34.710Z",
-  "count": 699,
+  "version": "2026.08.29.743",
+  "generated": "2026-08-29T21:36:23.438Z",
+  "count": 743,
   "skins": {
     "12920012": [
       "tomahawk",
@@ -4197,6 +4197,270 @@
       "Worn M60",
       4,
       2
+    ],
+    "b1b092f1": [
+      "revolver",
+      "Ace",
+      0,
+      0
+    ],
+    "7538ae76": [
+      "revolver",
+      "Alien Hazard",
+      3,
+      0
+    ],
+    "0f313008": [
+      "revolver",
+      "Blast Revolver",
+      4,
+      0
+    ],
+    "033cb7a1": [
+      "revolver",
+      "Case Hardened",
+      1,
+      0
+    ],
+    "3641c7d4": [
+      "bayonet",
+      "Constellations",
+      4,
+      1
+    ],
+    "e82f6e1f": [
+      "revolver",
+      "Critical",
+      0,
+      0
+    ],
+    "55b189f3": [
+      "revolver",
+      "Crosses",
+      0,
+      0
+    ],
+    "3562d69a": [
+      "revolver",
+      "Cyber Revolver",
+      4,
+      2
+    ],
+    "0fb69ea2": [
+      "revolver",
+      "Danger",
+      0,
+      0
+    ],
+    "49485615": [
+      "revolver",
+      "Dragonic Revolver",
+      4,
+      2
+    ],
+    "5dcc5953": [
+      "bayonet",
+      "Engravement",
+      4,
+      1
+    ],
+    "eb2a2fd6": [
+      "revolver",
+      "Fade",
+      3,
+      0
+    ],
+    "c3f9b8b5": [
+      "revolver",
+      "Festive",
+      3,
+      0
+    ],
+    "6fa321f3": [
+      "revolver",
+      "Flow",
+      2,
+      0
+    ],
+    "eef5ef74": [
+      "revolver",
+      "Ganache",
+      4,
+      0
+    ],
+    "93551b1d": [
+      "revolver",
+      "Height",
+      3,
+      0
+    ],
+    "827c029f": [
+      "revolver",
+      "Hex",
+      0,
+      0
+    ],
+    "5ca570f6": [
+      "revolver",
+      "Infra",
+      2,
+      0
+    ],
+    "e0a5e09f": [
+      "revolver",
+      "Lis",
+      4,
+      0
+    ],
+    "e6010f69": [
+      "revolver",
+      "Magic Splat",
+      2,
+      0
+    ],
+    "d46d7e76": [
+      "revolver",
+      "Magnum",
+      2,
+      0
+    ],
+    "1499aeba": [
+      "revolver",
+      "Murdered",
+      3,
+      0
+    ],
+    "27612fbb": [
+      "revolver",
+      "Mystic",
+      1,
+      0
+    ],
+    "11663e70": [
+      "revolver",
+      "Navy",
+      0,
+      0
+    ],
+    "afccd8dd": [
+      "revolver",
+      "Ortus",
+      4,
+      0
+    ],
+    "7779e158": [
+      "bayonet",
+      "Ranked_S2 Top100",
+      4,
+      3
+    ],
+    "86b004be": [
+      "revolver",
+      "Royalty",
+      0,
+      0
+    ],
+    "ddcda273": [
+      "revolver",
+      "Smoked",
+      0,
+      0
+    ],
+    "8eff4809": [
+      "revolver",
+      "Starlinked",
+      0,
+      0
+    ],
+    "11e7e023": [
+      "revolver",
+      "Swirl",
+      2,
+      0
+    ],
+    "79fcf7a9": [
+      "revolver",
+      "Target",
+      4,
+      0
+    ],
+    "d98ccb8f": [
+      "revolver",
+      "Viking",
+      1,
+      0
+    ],
+    "8ed7832f": [
+      "revolver",
+      "Volcaic",
+      3,
+      0
+    ],
+    "09c23d4a": [
+      "revolver",
+      "Watermelon",
+      3,
+      0
+    ],
+    "e145f198": [
+      "bayonet",
+      "Ranked_S5 Bronze",
+      4,
+      3
+    ],
+    "abf3ef82": [
+      "bayonet",
+      "Ranked_S5 Gold",
+      4,
+      3
+    ],
+    "d054924d": [
+      "bayonet",
+      "Ranked_S5 Silver",
+      4,
+      3
+    ],
+    "bd511e70": [
+      "bayonet",
+      "Ranked_S5 Top10",
+      4,
+      3
+    ],
+    "07726b3d": [
+      "bayonet",
+      "Ranked_S5 Top100",
+      4,
+      3
+    ],
+    "fcb0f85f": [
+      "bayonet",
+      "Ranked_S6 Bronze",
+      4,
+      3
+    ],
+    "bfd53f80": [
+      "bayonet",
+      "Ranked_S6 Gold",
+      4,
+      3
+    ],
+    "3bdee561": [
+      "bayonet",
+      "Ranked_S6 Silver",
+      4,
+      3
+    ],
+    "15474881": [
+      "bayonet",
+      "Ranked_S6 Top10",
+      4,
+      3
+    ],
+    "0b7ab893": [
+      "bayonet",
+      "Ranked_S6 Top100",
+      4,
+      3
     ]
   },
   "renders": {
@@ -5443,6 +5707,18 @@
     "e327d87a": [
       1,
       "render-mini.788a3a67.webp"
+    ],
+    "3562d69a": [
+      1,
+      "render-mini.c1765ccb.webp"
+    ],
+    "49485615": [
+      1,
+      "render-mini.24d52e40.webp"
+    ],
+    "7779e158": [
+      1,
+      "render-mini.1123bbdd.webp"
     ]
   },
   "gunSets": {
@@ -5533,6 +5809,7 @@
     "cyber": {
       "label": "Cyber",
       "skins": {
+        "revolver": "3562d69a",
         "wheatie": "a9f184b9",
         "m60": "ba093fb9"
       }
@@ -5540,6 +5817,7 @@
     "dragonic": {
       "label": "Dragonic",
       "skins": {
+        "revolver": "49485615",
         "ar9": "63ea4d0b",
         "wheatie": "eacb0ea9",
         "scar": "025c48df"
