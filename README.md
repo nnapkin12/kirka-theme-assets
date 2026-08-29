@@ -31,7 +31,7 @@ Gives a new look and places FPS/Ping on the bottom right, it uses the already ex
 Create a custom head and body color for your charecter. At the top of the script, edit the two hex values, labeled head and body.
 
 <p align="center">
-  <img src="misc/custom-player-color-preview.png" alt="Custom Body and Heady script preview" width="840">
+  <img src="misc/custom-player-color-preview.png" alt="Custom Body and Heady script preview" width="500">
 </p>
 
 
