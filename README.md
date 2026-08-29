@@ -26,3 +26,7 @@ Gives a new look and places FPS/Ping on the bottom right, it uses the already ex
 <p align="center">
   <img src="misc/Wpn-anim-gunscale-preview.png" alt="WPN-anims and Gun Scale mod Preview" width="840">
 </p>
+
+
+[Kirka Skin DB](https://github.com/nnapkin12/napkin-theme-assets/blob/main/misc/skins.json_):
+Kirka Skin database i update from time to time. useful for asset scripts, CSS previewing skins etc.| contains hashes, texture webps, render webps fallback to https://kirka.lukeskywalk.com . Skin sets organized aswell.
