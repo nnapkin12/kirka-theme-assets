@@ -64,7 +64,7 @@
     }
     const s = document.createElement('style');
     s.id = OVERLAY_STYLE_ID;
-    // Same parking trick as CustomSkinLink: keep nodes updating, not on-screen.
+    // parking : keep nodes updating, not on-screen.
     s.textContent = `
       body.nap-fps-in-game #overlay.nap-fps-overlay-pinned:not(.nap-fps-overlay-live) {
         display: none !important;
@@ -118,7 +118,7 @@
     }
   }
 
-  /** Match like CustomSkinLink / NAP Discord: /games/ URL (+ interface when present). */
+  /**  /games/ URL (+ interface when present). */
   function isInMatch() {
     let onGamesUrl = false;
     try {
@@ -346,5 +346,5 @@
     boot();
   }
 
-  console.log('[NAP FPS/MS] active — CustomSkinLink-style enable + park + HUD');
+  console.log('[FPS/MS] script active — enabled park + HUD');
 })();
