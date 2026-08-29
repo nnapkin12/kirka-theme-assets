@@ -27,6 +27,14 @@ Gives a new look and places FPS/Ping on the bottom right, it uses the already ex
   <img src="misc/Wpn-anim-gunscale-preview.png" alt="WPN-anims and Gun Scale mod Preview" width="840">
 </p>
 
+[Custom Head/Body Color](https://github.com/nnapkin12/napkin-theme-assets/blob/main/Scripts/Custom-Player-Color.js):
+Create a custom head and body color for your charecter. At the top of the script, edit the two hex values, labeled head and body.
+
+<p align="center">
+  <img src="misc/custom-player-color-preview.png" alt="Custom Body and Heady script preview" width="840">
+</p>
+
+
 
 [Kirka Skin DB](https://github.com/nnapkin12/napkin-theme-assets/blob/main/misc/skins.json):
 Kirka Skin database i update from time to time. useful for asset scripts, CSS previewing skins etc.| contains hashes, texture webps, render webps fallback to https://kirka.lukeskywalk.com . Skin sets organized aswell.
